@@ -242,6 +242,7 @@ const Store = {
     const out=await Promise.all(refs.map(r=>this.getSchedule(r.code).then(s=>s&&{...s, role:r.role}).catch(()=>null)));
     return out.filter(Boolean);
   },
+  async setHeadcount(code, n){ await this.fs.doc("schedules/"+code).update({headcount:n}); },
   async setConfirmed(code, day){ await this.fs.doc("schedules/"+code).update({confirmed:day||null}); },
   watchSchedule(code, onChange){ return this.fs.doc("schedules/"+code).onSnapshot(s=>{ if(s.exists) onChange({code, ...s.data()}); }, ()=>{}); },
   async summary(code){
@@ -528,8 +529,26 @@ async function detail(code){
   let sched;
   try{ sched=await Store.getSchedule(code); }catch{}
   if(!sched){ app.append(topBar(), h("p",{class:"err"},"일정을 불러오지 못했어요.")); return; }
-  let people=[], sel=null, map={}, top3=[];
+  let people=[], sel=null, map={}, top3=[], editHC=false;
   const isOwner=sched.createdBy===Store.me.key;
+  const hcPanel=h("div");
+  function renderHC(){
+    if(!isOwner || (sched.headcount && !editHC)){ hcPanel.replaceChildren(); return; }
+    const inp=h("input",{class:"t",type:"number",inputmode:"numeric",min:"2",max:"30",placeholder:"예: 5",value:sched.headcount||""});
+    const err=h("p",{class:"err"});
+    const save=h("button",{class:"btn",onclick:async()=>{
+      const n=Number(inp.value);
+      if(!Number.isInteger(n)||n<2||n>30){err.textContent="2명에서 30명 사이로 적어주세요.";return}
+      save.disabled=true;
+      try{ await Store.setHeadcount(code,n); sched.headcount=n; editHC=false; toast("인원을 저장했어요"); render(); }
+      catch(e){ save.disabled=false; err.textContent=Store.isDenied(e)?"저장이 거부됐어요. 규칙이 새 버전인지 확인해 주세요.":"저장하지 못했어요. 다시 눌러주세요."; }
+    }},"저장");
+    hcPanel.replaceChildren(h("div",{class:"panel stk"},
+      h("h3",{}, sched.headcount ? "인원 수정하기" : "모이는 인원을 정해주세요"),
+      h("p",{class:"small muted",style:"margin-bottom:10px"},"나를 포함한 인원이에요. 정해두면 몇 명이 체크했는지 보여요."),
+      h("div",{class:"row"}, inp, save),
+      editHC ? h("button",{class:"linkbtn",onclick:()=>{editHC=false;renderHC();}},"취소") : null, err));
+  }
   const head=h("p",{class:"muted small"}), selPanel=h("div"), bestPanel=h("div"), confPanel=h("div");
   const build=()=>{ map={}; for(const p of people) for(const [k,v] of Object.entries(p.marks||{})) (map[k] ||= []).push({name:p.name||"이름 없음",v}); for(const k in map) map[k].sort((a,b)=>(ORDER[a.v]??3)-(ORDER[b.v]??3)); };
   const cal=calendar({
@@ -595,14 +614,15 @@ async function detail(code){
   }
   function render(){
     build();
-    head.textContent=(sched.headcount ? `${people.length}/${sched.headcount}명 체크 완료` : `${people.length}명 참여`)+` · 초대코드 ${code}`;
-    cal.redraw(); renderSel(); renderBest(); renderConf();
+    head.replaceChildren((sched.headcount ? `${people.length}/${sched.headcount}명 체크 완료` : `${people.length}명 참여`)+` · 초대코드 ${code}`,
+      isOwner && sched.headcount && !editHC ? h("button",{class:"linkbtn",onclick:()=>{editHC=true;renderHC();}},"인원 수정") : "");
+    cal.redraw(); renderSel(); renderBest(); renderConf(); renderHC();
   }
-  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},sched.name), head, confPanel, bestPanel, cal, selPanel,
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},sched.name), head, hcPanel, confPanel, bestPanel, cal, selPanel,
     h("div",{class:"row"}, h("button",{class:"btn",onclick:()=>go(joinMarks,code,sched.name)},"내 일정 수정"),
       h("button",{class:"btn ghost",onclick:()=>go(inviteScreen,code,sched.name,false)},"초대하기"))));
   render();
-  const u1=Store.watchPeople(code, list=>{people=list;render();}, ()=>{head.textContent="실시간 업데이트가 멈췄어요. 다시 들어와 주세요.";});
+  const u1=Store.watchPeople(code, list=>{people=list;render();}, ()=>{head.replaceChildren("실시간 업데이트가 멈췄어요. 다시 들어와 주세요.");});
   const u2=Store.watchSchedule(code, s2=>{sched=s2;render();});
   S.unsub=()=>{u1();u2();};
 }
