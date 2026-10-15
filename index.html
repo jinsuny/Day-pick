@@ -71,6 +71,8 @@ button.stk:active{transform:translateY(2px);box-shadow:0 1px 0 var(--line)}
 .card.join{background:var(--sun-bg)}
 .card.view{background:var(--mint-bg)}
 .card:disabled{opacity:.5}
+.hello{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px;font-size:14px;color:var(--muted)}
+.linkbtn{background:none;border:0;padding:4px;text-decoration:underline;color:var(--muted);font-size:14px}
 .notice{background:var(--sun-bg);border:2px dashed var(--sun);border-radius:16px;padding:12px 14px;font-size:14px;margin-top:16px;text-align:center}
 
 /* forms */
@@ -171,39 +173,65 @@ const LS = {
   get(k, d){ try{ const v=localStorage.getItem("daypick:"+k); return v==null ? d : JSON.parse(v); }catch{ return d; } },
   set(k, v){ try{ localStorage.setItem("daypick:"+k, JSON.stringify(v)); }catch{} }
 };
+const cleanName = n => (n||"").normalize("NFC").trim().replace(/\s+/g," ");
+const nameKey = n => cleanName(n).toLowerCase();
+async function pinHash(key, pin){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("daypick:"+key+":"+pin));
+  return Array.from(new Uint8Array(buf), b=>b.toString(16).padStart(2,"0")).join("");
+}
 
 const Store = {
-  fs:null, uid:null, configMissing:false,
+  fs:null, me:null, configMissing:false,
   async init(){
     if (!firebaseConfig.apiKey || firebaseConfig.apiKey==="PASTE_HERE" || !window.firebase){ this.configMissing=true; return false; }
     firebase.initializeApp(firebaseConfig);
     this.fs = firebase.firestore();
-    let uid = LS.get("uid", null);
-    if (!uid){ uid = (crypto.randomUUID ? crypto.randomUUID() : newCode()+newCode()+Date.now()).replace(/-/g,""); LS.set("uid", uid); }
-    this.uid = uid; return true;
+    this.me = LS.get("me", null);
+    return true;
   },
-  async getNick(){ return LS.get("nick", ""); },
-  async setNick(nick){ LS.set("nick", nick); },
+  nameError(n){
+    const c=cleanName(n);
+    if (!c) return "이름을 적어주세요.";
+    if (c.length>12) return "이름은 12자까지 쓸 수 있어요.";
+    if (/[\/]/.test(c) || /^__.*__$/.test(c) || c==="." || c==="..") return "이름에 쓸 수 없는 글자가 있어요.";
+    return "";
+  },
+  async login(name, pin){
+    const k=nameKey(name);
+    const u=await this.fs.doc("users/"+k).get();
+    if (!u.exists) return "new";
+    if (u.data().pinHash !== await pinHash(k,pin)) return "wrong";
+    this.me={key:k, name:u.data().name}; LS.set("me", this.me); return "ok";
+  },
+  async register(name, pin){
+    const k=nameKey(name), nm=cleanName(name);
+    await this.fs.doc("users/"+k).set({name:nm, pinHash:await pinHash(k,pin), createdAt:Date.now()});
+    this.me={key:k, name:nm}; LS.set("me", this.me);
+  },
+  logout(){ this.me=null; LS.set("me", null); },
   async getSchedule(code){ const s=await this.fs.doc("schedules/"+code).get(); return s.exists ? {code, ...s.data()} : null; },
   async createSchedule(name){
     for (let i=0;i<5;i++){
       const code=newCode();
       if (!(await this.getSchedule(code))){
-        await this.fs.doc("schedules/"+code).set({name, createdBy:this.uid, createdAt:Date.now()});
+        await this.fs.doc("schedules/"+code).set({name, createdBy:this.me.key, createdAt:Date.now()});
+        await this.fs.doc(`users/${this.me.key}/mine/${code}`).set({code, joinedAt:Date.now(), role:"owner"});
         return code;
       }
     }
     throw new Error("code");
   },
-  async getMyMarks(code){ const r=await this.fs.doc(`schedules/${code}/responses/${this.uid}`).get(); return r.exists ? {...(r.data().marks||{})} : {}; },
-  async saveMyMarks(code, name, marks){
-    await this.fs.doc(`schedules/${code}/responses/${this.uid}`).set({name, marks, updatedAt:Date.now()});
-    const mine = LS.get("mine", []).filter(x=>x.code!==code);
-    mine.unshift({code, joinedAt:Date.now()}); LS.set("mine", mine.slice(0,50));
+  async hasJoined(code){ const r=await this.fs.doc(`schedules/${code}/responses/${this.me.key}`).get(); return r.exists; },
+  async getMyMarks(code){ const r=await this.fs.doc(`schedules/${code}/responses/${this.me.key}`).get(); return r.exists ? {...(r.data().marks||{})} : {}; },
+  async saveMyMarks(code, marks){
+    await this.fs.doc(`schedules/${code}/responses/${this.me.key}`).set({name:this.me.name, marks, updatedAt:Date.now()});
+    const ref=this.fs.doc(`users/${this.me.key}/mine/${code}`);
+    if (!(await ref.get()).exists) await ref.set({code, joinedAt:Date.now(), role:"member"});
   },
   async listMine(){
-    const refs = LS.get("mine", []);
-    const out = await Promise.all(refs.map(r=>this.getSchedule(r.code).catch(()=>null)));
+    const snap=await this.fs.collection(`users/${this.me.key}/mine`).get();
+    const refs=snap.docs.map(d=>d.data()).sort((a,b)=>(b.joinedAt||0)-(a.joinedAt||0));
+    const out=await Promise.all(refs.map(r=>this.getSchedule(r.code).then(s=>s&&{...s, role:r.role}).catch(()=>null)));
     return out.filter(Boolean);
   },
   watchPeople(code, onChange, onError){
@@ -222,7 +250,7 @@ const ORDER = {o:0, e7:0, e8:1, am:2, pm:2};
 const isFull = v => v==="o"||v==="e7"||v==="e8";
 function isWeekend(k){ const [y,m,d]=k.split("-").map(Number); const w=new Date(y,m-1,d).getDay(); return w===0||w===6; }
 const app = document.getElementById("app");
-const S = { ready:false, checked:false, nick:"", unsub:null };
+const S = { ready:false, checked:false, pending:null, unsub:null };
 
 function h(tag, attrs, ...kids){
   const el = document.createElement(tag);
@@ -298,34 +326,81 @@ function markEditor(marks){
   return h("div",{class:"stack"}, h("p",{class:"small muted"},"주말 칸에는 '주말' 줄에서, 평일 칸에는 '평일' 줄에서 고른 표시가 찍혀요. 평일 시간은 그 시간부터 된다는 뜻이에요. 한 번 더 누르면 지워져요."), pal, cal);
 }
 
-function nickField(){
-  const inp=h("input",{class:"t",id:"nick",maxlength:"12",placeholder:"예: 민지",value:S.nick||""});
-  return {el:h("div",{},h("label",{class:"f",for:"nick"},"달력에 보일 내 이름"),inp), get:()=>inp.value.trim()};
+/* screens */
+function hero(){ return h("div",{class:"hero"}, h("h1",{},"데이픽"), h("p",{},"주말은 ○ 하루 종일, △ 오전·오후", h("br"), "평일은 ○ 저녁 7시·8시")); }
+
+function loginScreen(){
+  const nameIn=h("input",{class:"t",id:"lname",maxlength:"12",placeholder:"예: 민지",autocomplete:"username"});
+  const pinIn=h("input",{class:"t",id:"lpin",type:"password",inputmode:"numeric",pattern:"[0-9]*",maxlength:"4",placeholder:"숫자 4자리",autocomplete:"current-password"});
+  const err=h("p",{class:"err"});
+  const box=h("div",{class:"stack"});
+  const btn=h("button",{class:"btn",onclick:async()=>{
+    const ne=Store.nameError(nameIn.value); if(ne){err.textContent=ne;return}
+    if(!/^\d{4}$/.test(pinIn.value)){err.textContent="비밀번호는 숫자 4자리로 적어주세요.";return}
+    btn.disabled=true; err.textContent="";
+    try{
+      const r=await Store.login(nameIn.value, pinIn.value);
+      if(r==="ok"){ toast(`${Store.me.name}님, 반가워요!`); afterLogin(); return; }
+      if(r==="wrong"){ err.textContent="비밀번호가 맞지 않아요. 처음 오셨다면, 이미 다른 사람이 쓰는 이름이에요. 다른 이름(예: 민지2)으로 등록해 주세요."; btn.disabled=false; return; }
+      confirmNew(cleanName(nameIn.value), pinIn.value);
+    }catch{ err.textContent="연결하지 못했어요. 잠시 후 다시 눌러주세요."; btn.disabled=false; }
+  }},"시작하기");
+  box.append(
+    h("div",{},h("label",{class:"f",for:"lname"},"이름"),nameIn),
+    h("div",{},h("label",{class:"f",for:"lpin"},"비밀번호"),pinIn),
+    err, btn,
+    h("p",{class:"small muted",style:"text-align:center"},"처음이면 이 이름으로 새로 등록되고, 전에 쓴 이름이면 로그인돼요."));
+  app.append(hero(), box);
+
+  function confirmNew(nm, pin){
+    const pin2=h("input",{class:"t",id:"lpin2",type:"password",inputmode:"numeric",pattern:"[0-9]*",maxlength:"4",placeholder:"숫자 4자리 한 번 더"});
+    const err2=h("p",{class:"err"});
+    const ok=h("button",{class:"btn",onclick:async()=>{
+      if(pin2.value!==pin){err2.textContent="비밀번호가 서로 달라요. 다시 확인해 주세요.";return}
+      ok.disabled=true;
+      try{ await Store.register(nm, pin); toast(`${nm}님, 등록했어요!`); afterLogin(); }
+      catch(e){ ok.disabled=false; err2.textContent=Store.isDenied(e)?"방금 다른 사람이 이 이름을 등록했어요. 다른 이름으로 해주세요.":"등록하지 못했어요. 다시 눌러주세요."; }
+    }},"이 이름으로 등록하기");
+    box.replaceChildren(
+      h("div",{class:"panel stk"}, h("h3",{},`'${nm}'은(는) 처음 보는 이름이에요`), h("p",{class:"small muted"},"새로 등록할게요. 다음에 들어올 때 필요하니 비밀번호를 꼭 기억해 주세요.")),
+      h("div",{},h("label",{class:"f",for:"lpin2"},"비밀번호 확인"),pin2), err2, ok,
+      h("button",{class:"btn ghost",onclick:()=>go(loginScreen)},"이름 다시 입력하기"));
+    pin2.focus();
+  }
 }
 
-/* screens */
+function afterLogin(){ const c=S.pending; S.pending=null; if(c) go(openCode, c); else go(home); }
+
+async function openCode(code){
+  app.append(h("p",{class:"muted",style:"text-align:center;padding-top:40px"},"일정을 찾는 중…"));
+  try{
+    const s=await Store.getSchedule(code);
+    if(!s){ go(joinScreen, "", `코드 ${code}인 일정이 없어요. 코드를 다시 확인해 주세요.`); return; }
+    if(await Store.hasJoined(code)) go(detail, code); else go(joinMarks, code, s.name);
+  }catch{ go(joinScreen, "", "일정을 불러오지 못했어요. 다시 시도해 주세요."); }
+}
+
 function home(){
   const dis=!S.ready;
-  const card=(cls,ic,t,d,fn)=>h("button",{class:"card stk "+cls,disabled:dis,onclick:fn}, h("span",{class:"ic"},ic), h("b",{},t));
-  app.append(
-    h("div",{class:"hero"}, h("h1",{},"데이픽"), h("p",{},"주말은 ○ 하루 종일, △ 오전·오후", h("br"), "평일은 ○ 저녁 7시·8시")),
+  const card=(cls,ic,t,fn)=>h("button",{class:"card stk "+cls,disabled:dis,onclick:fn}, h("span",{class:"ic"},ic), h("b",{},t));
+  app.append(hero(),
+    Store.me ? h("p",{class:"hello"}, `${Store.me.name}님, 반가워요`, h("button",{class:"linkbtn",onclick:()=>{Store.logout();go(loginScreen);}},"로그아웃")) : null,
     h("div",{class:"menu"},
-      card("big","+","일정 만들기","모임 이름 정하고 친구 부르기",()=>go(createName)),
-      card("join","✉","참여하기","받은 코드 넣기",()=>go(joinScreen)),
-      card("view","○","일정 보기","모두의 가능한 날",()=>go(listScreen))),
-    dis ? h("p",{class:"notice"}, S.checked ? (Store.configMissing ? "Firebase 설정값을 넣어야 동작해요. index.html 위쪽의 firebaseConfig를 채워주세요." : "연결하지 못했어요. 새로고침해 주세요.") : "준비하는 중이에요…") : null);
+      card("big","+","일정 만들기",()=>go(createName)),
+      card("join","✉","참여하기",()=>go(joinScreen)),
+      card("view","○","일정 보기",()=>go(listScreen))),
+    dis ? h("p",{class:"notice"}, S.checked ? (Store.configMissing ? "Firebase 설정값을 넣어야 동작해요." : "연결하지 못했어요. 새로고침해 주세요.") : "준비하는 중이에요…") : null);
 }
 
 function createName(){
   const nameIn=h("input",{class:"t",id:"sname",maxlength:"30",placeholder:"예: 12월 송년회"});
-  const nick=nickField(); const err=h("p",{class:"err"});
+  const err=h("p",{class:"err"});
   app.append(topBar(), h("div",{class:"stack"}, h("h2",{},"새 일정 만들기"),
-    h("div",{},h("label",{class:"f",for:"sname"},"일정 이름"),nameIn), nick.el, err,
+    h("div",{},h("label",{class:"f",for:"sname"},"일정 이름"),nameIn), err,
     h("button",{class:"btn",onclick:()=>{
-      const n=nameIn.value.trim(), k=nick.get();
+      const n=nameIn.value.trim();
       if(!n){err.textContent="일정 이름을 적어주세요.";return}
-      if(!k){err.textContent="내 이름을 적어주세요.";return}
-      go(createMarks,{name:n,nick:k});
+      go(createMarks,{name:n});
     }},"다음: 내 일정 표시하기")));
   nameIn.focus();
 }
@@ -336,15 +411,14 @@ function createMarks(draft){
     save.disabled=true; save.textContent="만드는 중…";
     try{
       const code=await Store.createSchedule(draft.name);
-      S.nick=draft.nick; await Store.setNick(draft.nick);
-      await Store.saveMyMarks(code, draft.nick, marks);
+      await Store.saveMyMarks(code, marks);
       go(inviteScreen, code, draft.name, true);
     }catch(e){
       save.disabled=false; save.textContent="저장하고 친구 초대하기";
-      err.textContent=Store.isDenied(e)?"저장이 거부됐어요. Firestore 규칙이 게시됐는지 확인해 주세요.":"저장하지 못했어요. 잠시 후 다시 눌러주세요.";
+      err.textContent=Store.isDenied(e)?"저장이 거부됐어요. Firestore 규칙이 새 버전으로 게시됐는지 확인해 주세요.":"저장하지 못했어요. 잠시 후 다시 눌러주세요.";
     }
   }},"저장하고 친구 초대하기");
-  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},draft.name), h("p",{class:"muted"},`${draft.nick}님이 되는 날을 표시해 주세요.`), markEditor(marks), err, save));
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},draft.name), h("p",{class:"muted"},`${Store.me.name}님이 되는 날을 표시해 주세요.`), markEditor(marks), err, save));
 }
 
 function inviteScreen(code, name, fresh){
@@ -359,41 +433,34 @@ function inviteScreen(code, name, fresh){
     h("button",{class:"btn ghost",onclick:()=>go(detail,code)},"모두의 일정 보기")));
 }
 
-function joinScreen(prefill){
+function joinScreen(prefill, msg){
   const inp=h("input",{class:"t",id:"jc",placeholder:"링크, 초대 메시지, 코드 6자리",value:prefill||""});
-  const err=h("p",{class:"err"});
-  const btn=h("button",{class:"btn",onclick:async()=>{
+  const err=h("p",{class:"err"}, msg||"");
+  const btn=h("button",{class:"btn",onclick:()=>{
     const code=parseCode(inp.value);
     if(!code){err.textContent="초대코드 6자리를 못 찾았어요. 메시지 전체를 붙여넣거나 코드만 적어주세요.";return}
-    btn.disabled=true;
-    try{
-      const s=await Store.getSchedule(code);
-      if(!s){err.textContent=`코드 ${code}인 일정이 없어요. 코드를 다시 확인해 주세요.`;btn.disabled=false;return}
-      go(joinMarks, code, s.name);
-    }catch{ err.textContent="일정을 불러오지 못했어요. 다시 시도해 주세요."; btn.disabled=false; }
+    go(openCode, code);
   }},"일정 찾기");
   app.append(topBar(), h("div",{class:"stack"}, h("h2",{},"일정 참여하기"),
     h("div",{},h("label",{class:"f",for:"jc"},"받은 링크나 초대코드를 붙여넣어 주세요"),inp), err, btn));
   inp.focus();
-  if(prefill) btn.click();
 }
 
 async function joinMarks(code, name){
   let marks={}; try{ marks=await Store.getMyMarks(code); }catch{}
-  const nick=nickField(); const err=h("p",{class:"err"});
+  const err=h("p",{class:"err"});
   const save=h("button",{class:"btn",onclick:async()=>{
-    const k=nick.get(); if(!k){err.textContent="내 이름을 적어주세요.";return}
     save.disabled=true; save.textContent="저장하는 중…";
-    try{ S.nick=k; await Store.setNick(k); await Store.saveMyMarks(code,k,marks); toast("저장했어요!"); go(detail,code); }
+    try{ await Store.saveMyMarks(code,marks); toast("저장했어요!"); go(detail,code); }
     catch(e){ save.disabled=false; save.textContent="내 일정 저장하기";
-      err.textContent=Store.isDenied(e)?"저장이 거부됐어요. 이름은 12자, 일정은 400일 이하로 표시해 주세요.":"저장하지 못했어요. 다시 눌러주세요."; }
+      err.textContent=Store.isDenied(e)?"저장이 거부됐어요. Firestore 규칙이 새 버전으로 게시됐는지 확인해 주세요.":"저장하지 못했어요. 다시 눌러주세요."; }
   }},"내 일정 저장하기");
-  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},name), h("p",{class:"small muted"},`초대코드 ${code}`), nick.el, markEditor(marks), err, save));
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},name), h("p",{class:"muted"},`${Store.me.name}님이 되는 날을 표시해 주세요.`), markEditor(marks), err, save));
 }
 
 async function listScreen(){
   const box=h("div",{class:"stack"}, h("p",{class:"muted"},"불러오는 중…"));
-  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},"내 일정"), box));
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},`${Store.me.name}님의 일정`), box));
   try{
     const items=await Store.listMine();
     if(!items.length){
@@ -402,7 +469,7 @@ async function listScreen(){
       return;
     }
     box.replaceChildren(...items.map(it=>h("button",{class:"item stk",onclick:()=>go(detail,it.code)},
-      h("span",{},h("b",{},it.name),h("span",{class:"small muted"},it.createdBy===Store.uid?"내가 만든 일정":"참여한 일정")),
+      h("span",{},h("b",{},it.name),h("span",{class:"small muted"},it.role==="owner"?"내가 만든 일정":"참여한 일정")),
       h("span",{class:"code small muted"},it.code))));
   }catch{ box.replaceChildren(h("p",{class:"err"},"목록을 불러오지 못했어요. 처음 화면에서 다시 들어와 주세요.")); }
 }
@@ -452,12 +519,15 @@ async function detail(code){
 }
 
 /* boot */
-go(home);
 (async()=>{
-  try{ S.ready = await Store.init(); if(S.ready) S.nick = await Store.getNick(); }catch{ S.ready=false; }
-  S.checked=true;
+  app.append(h("p",{class:"muted",style:"text-align:center;padding-top:40px"},"준비하는 중이에요…"));
   const hc=new URLSearchParams(location.search).get("code") || (location.hash.match(/code=([A-Za-z0-9]{6})/)||[])[1];
-  if(S.ready&&hc&&/^[A-Za-z0-9]{6}$/.test(hc)) go(joinScreen,hc.toUpperCase()); else go(home);
+  if(hc && /^[A-Za-z0-9]{6}$/.test(hc)) S.pending=hc.toUpperCase();
+  try{ S.ready = await Store.init(); }catch{ S.ready=false; }
+  S.checked=true;
+  if(!S.ready) go(home);
+  else if(!Store.me) go(loginScreen);
+  else afterLogin();
 })();
 })();
 </script>
