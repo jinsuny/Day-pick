@@ -85,12 +85,13 @@ input.t{width:100%;padding:13px 16px;border:2px solid var(--line);border-radius:
 .err{color:#E0445A;font-size:14px}
 
 /* brush */
-.brush{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);padding:8px 0 10px;z-index:5}
-.brush button{border:2px solid var(--line);background:var(--surface);border-radius:16px;padding:6px 2px;font-size:13px;line-height:1.2;box-shadow:0 3px 0 var(--line)}
-.brush button .s{display:block;font-family:"Jua",sans-serif;font-size:24px}
-.brush button[data-v="o"] .s{color:var(--mint)} .brush button[data-v="am"] .s,.brush button[data-v="pm"] .s{color:var(--sun)}
+.brush{display:grid;grid-template-columns:34px repeat(3,1fr);gap:6px 8px;align-items:center;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);padding:8px 0 10px;z-index:5}
+.brush .bl{font-family:"Jua",sans-serif;font-size:14px;color:var(--muted);text-align:center}
+.brush button{border:1.5px solid var(--line);background:var(--surface);border-radius:14px;padding:4px 2px;font-size:12px;line-height:1.2;box-shadow:0 3px 0 var(--line)}
+.brush button .s{display:block;font-family:"Jua",sans-serif;font-size:20px}
+.brush button[data-v="o"] .s,.brush button[data-v="e7"] .s,.brush button[data-v="e8"] .s{color:var(--mint)} .brush button[data-v="am"] .s,.brush button[data-v="pm"] .s{color:var(--sun)}
 .brush button[aria-pressed="true"]{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
-.brush button[data-v="o"][aria-pressed="true"]{background:var(--mint-bg)}
+.brush button[data-v="o"][aria-pressed="true"],.brush button[data-v="e7"][aria-pressed="true"],.brush button[data-v="e8"][aria-pressed="true"]{background:var(--mint-bg)}
 .brush button[data-v="am"][aria-pressed="true"],.brush button[data-v="pm"][aria-pressed="true"]{background:var(--sun-bg)}
 .brush button[data-v="x"][aria-pressed="true"]{background:var(--soft)}
 
@@ -107,16 +108,18 @@ button.cell{background:var(--bg)}
 .cell .n{font-size:13px;line-height:1.1}
 .cell.past{background:var(--past);color:var(--muted);opacity:.55}
 .cell.today .n{background:var(--pink);color:var(--on-pink);border-radius:999px;padding:1px 6px}
-.cell.o{background:var(--mint-bg);border-color:var(--mint)}
+.cell.o,.cell.e7,.cell.e8{background:var(--mint-bg);border-color:var(--mint)}
 .cell.am,.cell.pm{background:var(--sun-bg);border-color:var(--sun)}
 .cell .mk{font-family:"Jua",sans-serif;font-size:24px;line-height:1;margin-top:3px}
-.cell.o .mk{color:var(--mint)} .cell.am .mk,.cell.pm .mk{color:var(--sun)}
+.cell.o .mk,.cell.e7 .mk,.cell.e8 .mk{color:var(--mint)} .cell.am .mk,.cell.pm .mk{color:var(--sun)}
+.cell.e7 .ap,.cell.e8 .ap{color:var(--mint)}
+.cell .mk.sm{font-size:16px;margin-top:6px}
 .cell .ap{font-size:10px;color:var(--sun);font-weight:700}
 .cell.sel{border-color:var(--pink);box-shadow:0 0 0 2px var(--pink)}
 .cell.all{border-color:var(--mint)}
 .chips{display:flex;flex-direction:column;gap:2px;width:100%;margin-top:3px}
 .chip{font-size:10px;line-height:1.3;border-radius:6px;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chip.o{background:var(--mint-bg);color:var(--mint)}
+.chip.o,.chip.e7,.chip.e8{background:var(--mint-bg);color:var(--mint)}
 .chip.am,.chip.pm{background:var(--sun-bg);color:var(--sun)}
 .chip.more{color:var(--muted)}
 .star{position:absolute;top:1px;right:3px;font-size:10px}
@@ -212,8 +215,12 @@ const Store = {
 
 /* ========================= UI ========================= */
 const PAGE_URL = location.origin + location.pathname;
-const SYM = {o:"○", am:"△", pm:"△"};
-const SHORT = {o:"○", am:"△am", pm:"△pm"};
+const SYM = {o:"○", am:"△", pm:"△", e7:"○", e8:"○"};
+const SHORT = {o:"○", am:"△am", pm:"△pm", e7:"○7시", e8:"○8시"};
+const SCORE = {o:1, e7:1, e8:1, am:.5, pm:.5};
+const ORDER = {o:0, e7:0, e8:1, am:2, pm:2};
+const isFull = v => v==="o"||v==="e7"||v==="e8";
+function isWeekend(k){ const [y,m,d]=k.split("-").map(Number); const w=new Date(y,m-1,d).getDay(); return w===0||w===6; }
 const app = document.getElementById("app");
 const S = { ready:false, checked:false, nick:"", unsub:null };
 
@@ -271,17 +278,24 @@ function calendar({renderCell, onTap}){
 }
 
 function markEditor(marks){
-  let brush="o"; const btns={};
+  let we="o", wd="e7", erase=false; const btns={};
+  const sync=()=>{ for(const [v,b] of Object.entries(btns)) b.setAttribute("aria-pressed", String(v==="x" ? erase : (!erase && (v===we||v===wd)))); };
+  const mk=(v,s,l,fn)=>{ const b=h("button",{"data-v":v,onclick:()=>{fn();sync();}}, h("span",{class:"s"},s), l); btns[v]=b; return b; };
   const pal=h("div",{class:"brush",role:"group","aria-label":"표시 종류"},
-    ...[["o","○","하루 종일"],["am","△","오전"],["pm","△","오후"],["x","✕","지우기"]].map(([v,s,l])=>{
-      const b=h("button",{"data-v":v,"aria-pressed":v===brush?"true":"false",onclick:()=>{brush=v;for(const k in btns)btns[k].setAttribute("aria-pressed",k===v?"true":"false")}}, h("span",{class:"s"},s), l);
-      btns[v]=b; return b;
-    }));
+    h("span",{class:"bl"},"주말"),
+    mk("o","○","하루 종일",()=>{we="o";erase=false}), mk("am","△","오전",()=>{we="am";erase=false}), mk("pm","△","오후",()=>{we="pm";erase=false}),
+    h("span",{class:"bl"},"평일"),
+    mk("e7","○","7시",()=>{wd="e7";erase=false}), mk("e8","○","8시",()=>{wd="e8";erase=false}), mk("x","✕","지우기",()=>{erase=!erase}));
+  sync();
   const cal=calendar({
-    renderCell(el,k){ const v=marks[k]; if(!v) return; el.classList.add(v); el.append(h("span",{class:"mk"},SYM[v])); if(v!=="o") el.append(h("span",{class:"ap"},v==="am"?"오전":"오후")); },
-    onTap(k){ if(brush==="x"||marks[k]===brush) delete marks[k]; else marks[k]=brush; }
+    renderCell(el,k){
+      const v=marks[k]; if(!v) return; el.classList.add(v);
+      if(v==="e7"||v==="e8"){ el.append(h("span",{class:"mk"},"○"), h("span",{class:"ap"},v==="e7"?"7시":"8시")); return; }
+      el.append(h("span",{class:"mk"},SYM[v])); if(v!=="o") el.append(h("span",{class:"ap"},v==="am"?"오전":"오후"));
+    },
+    onTap(k){ const b=isWeekend(k)?we:wd; if(erase||marks[k]===b) delete marks[k]; else marks[k]=b; }
   });
-  return h("div",{class:"stack"}, h("p",{class:"small muted"},"종류를 고르고 날짜를 콕콕 눌러주세요. 한 번 더 누르면 지워져요."), pal, cal);
+  return h("div",{class:"stack"}, h("p",{class:"small muted"},"주말 칸에는 '주말' 줄에서, 평일 칸에는 '평일' 줄에서 고른 표시가 찍혀요. 평일 시간은 그 시간부터 된다는 뜻이에요. 한 번 더 누르면 지워져요."), pal, cal);
 }
 
 function nickField(){
@@ -294,7 +308,7 @@ function home(){
   const dis=!S.ready;
   const card=(cls,ic,t,d,fn)=>h("button",{class:"card stk "+cls,disabled:dis,onclick:fn}, h("span",{class:"ic"},ic), h("b",{},t));
   app.append(
-    h("div",{class:"hero"}, h("h1",{},"데이픽"), h("p",{},"하루 종일은 ○, 오전 또는 오후는 △")),
+    h("div",{class:"hero"}, h("h1",{},"데이픽"), h("p",{},"주말은 ○ 하루 종일, △ 오전·오후", h("br"), "평일은 ○ 저녁 7시·8시")),
     h("div",{class:"menu"},
       card("big","+","일정 만들기","모임 이름 정하고 친구 부르기",()=>go(createName)),
       card("join","✉","참여하기","받은 코드 넣기",()=>go(joinScreen)),
@@ -399,7 +413,7 @@ async function detail(code){
   if(!sched){ app.append(topBar(), h("p",{class:"err"},"일정을 불러오지 못했어요.")); return; }
   let people=[], sel=null, map={};
   const head=h("p",{class:"muted small"}), selPanel=h("div"), bestPanel=h("div");
-  const build=()=>{ map={}; for(const p of people) for(const [k,v] of Object.entries(p.marks||{})) (map[k] ||= []).push({name:p.name||"이름 없음",v}); for(const k in map) map[k].sort((a,b)=>(a.v==="o"?0:1)-(b.v==="o"?0:1)); };
+  const build=()=>{ map={}; for(const p of people) for(const [k,v] of Object.entries(p.marks||{})) (map[k] ||= []).push({name:p.name||"이름 없음",v}); for(const k in map) map[k].sort((a,b)=>(ORDER[a.v]??3)-(ORDER[b.v]??3)); };
   const cal=calendar({
     renderCell(el,k){
       const list=map[k]; if(!list) return;
@@ -408,7 +422,7 @@ async function detail(code){
       list.slice(0,2).forEach(x=>chips.append(h("span",{class:"chip "+x.v},`${x.name} ${SHORT[x.v]}`)));
       if(list.length>2) chips.append(h("span",{class:"chip more"},`+${list.length-2}`));
       el.append(chips);
-      if(people.length>1 && list.filter(x=>x.v==="o").length===people.length){ el.classList.add("all"); el.append(h("span",{class:"star","aria-label":"모두 가능"},"⭐")); }
+      if(people.length>1 && list.filter(x=>isFull(x.v)).length===people.length){ el.classList.add("all"); el.append(h("span",{class:"star","aria-label":"모두 가능"},"⭐")); }
     },
     onTap(k){ sel=k; renderSel(); }
   });
@@ -421,11 +435,13 @@ async function detail(code){
   }
   function renderBest(){
     const tk=todayKey();
-    const top3=Object.entries(map).filter(([k])=>k>=tk).map(([k,l])=>({k,s:l.reduce((a,x)=>a+(x.v==="o"?1:.5),0),o:l.filter(x=>x.v==="o").length,t:l.filter(x=>x.v!=="o").length}))
+    const top3=Object.entries(map).filter(([k])=>k>=tk).map(([k,l])=>{ const c=v=>l.filter(x=>x.v===v).length; const s=l.reduce((a,x)=>a+(SCORE[x.v]||0),0);
+        const txt=isWeekend(k) ? `○ ${c("o")}명${c("am")+c("pm")?` · △ ${c("am")+c("pm")}명`:""}` : `8시 ${c("e7")+c("e8")+c("o")}명 · 7시 ${c("e7")+c("o")}명`;
+        return {k,s,txt}; })
       .sort((a,b)=>b.s-a.s||a.k.localeCompare(b.k)).slice(0,3);
     bestPanel.replaceChildren(top3.length ? h("div",{class:"panel stk"}, h("h3",{},"가장 많이 되는 날"),
       h("div",{class:"best"}, ...top3.map((x,i)=>h("button",{onclick:()=>{sel=x.k;cal.redraw();renderSel();selPanel.scrollIntoView({behavior:"smooth",block:"nearest"})}},
-        h("span",{},h("span",{class:"rank"},i+1),fmtKey(x.k)), h("span",{class:"small muted"},`○ ${x.o}명${x.t?` · △ ${x.t}명`:""}`))))) : null);
+        h("span",{},h("span",{class:"rank"},i+1),fmtKey(x.k)), h("span",{class:"small muted"},x.txt))))) : null);
   }
   function render(){ build(); head.textContent=`${people.length}명 참여 · 초대코드 ${code}`; cal.redraw(); renderSel(); renderBest(); }
   app.append(topBar(), h("div",{class:"stack"}, h("h2",{},sched.name), head, bestPanel, cal, selPanel,
