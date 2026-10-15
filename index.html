@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>데이픽</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --bg:#F2F2F0; --surface:#FBFBFA; --ink:#3A3940; --muted:#7A7880; --line:#5E5C66; --soft:#E2E1E4;
+  --mint:#4F8E7C; --mint-bg:#E2EDE8; --sun:#A9803A; --sun-bg:#F1EADB; --pink:#B57A8A; --pink-bg:#EFE3E6;
+  --past:#E9E8E8; --on-pink:#FFFFFF; --focus:#B57A8A;
+  color-scheme:light;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1D1D21; --surface:#26262B; --ink:#E6E4E8; --muted:#A3A1A8; --line:#0E0E11; --soft:#36353C;
+    --mint:#86BFAE; --mint-bg:#2A3A35; --sun:#D4B27A; --sun-bg:#3D3527; --pink:#D3A1AF; --pink-bg:#3E2E33;
+    --past:#222226; --on-pink:#1D1D21; --focus:#D3A1AF; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1D1D21; --surface:#26262B; --ink:#E6E4E8; --muted:#A3A1A8; --line:#0E0E11; --soft:#36353C;
+  --mint:#86BFAE; --mint-bg:#2A3A35; --sun:#D4B27A; --sun-bg:#3D3527; --pink:#D3A1AF; --pink-bg:#3E2E33;
+  --past:#222226; --on-pink:#1D1D21; --focus:#D3A1AF; color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Gowun Dodum","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+main{max-width:520px;margin:0 auto;padding:16px 16px 48px}
+h1,h2,h3,.jua{font-family:"Jua","Apple SD Gothic Neo",sans-serif;font-weight:400;margin:0;line-height:1.2}
+h2{font-size:28px}
+p{margin:0}
+.muted{color:var(--muted)} .small{font-size:14px}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.stack>*+*{margin-top:14px}
+
+/* sticker look */
+.stk{background:var(--surface);border:1.5px solid var(--line);border-radius:20px;box-shadow:0 3px 0 var(--line)}
+button.stk{transition:transform .08s,box-shadow .08s}
+button.stk:active{transform:translateY(2px);box-shadow:0 1px 0 var(--line)}
+
+.topbar{display:flex;align-items:center;min-height:44px;margin-bottom:12px}
+.back{border:2px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 14px 4px 10px;font-family:"Jua",sans-serif;font-size:15px;box-shadow:0 2px 0 var(--line)}
+
+/* home */
+.hero{text-align:center;padding:56px 0 16px}
+.hero svg{width:min(260px,72vw);height:auto;display:block;margin:0 auto}
+.hero h1{font-size:clamp(46px,14vw,62px);margin-top:4px}
+.hero p{color:var(--muted);margin-top:2px}
+.bob{animation:bob 2.6s ease-in-out infinite;transform-origin:center bottom}
+.bob2{animation:bob 2.6s ease-in-out .5s infinite;transform-origin:center bottom}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+.menu{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:22px}
+.card{text-align:left;padding:16px;display:flex;flex-direction:column;gap:4px;min-height:104px}
+.card .ic{font-family:"Jua",sans-serif;font-size:30px;line-height:1;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--line);background:var(--surface);margin-bottom:6px}
+.card b{font-family:"Jua",sans-serif;font-weight:400;font-size:20px}
+.card span.d{font-size:13px;color:var(--ink);opacity:.75;line-height:1.4}
+.card.big{grid-column:1/-1;background:var(--pink-bg);flex-direction:row;align-items:center;gap:14px;min-height:0;padding:18px}
+.card.big .ic{margin:0;width:58px;height:58px;font-size:36px;background:var(--pink);color:var(--on-pink);flex:none}
+.card.big b{font-size:24px}
+.card.join{background:var(--sun-bg)}
+.card.view{background:var(--mint-bg)}
+.card:disabled{opacity:.5}
+.notice{background:var(--sun-bg);border:2px dashed var(--sun);border-radius:16px;padding:12px 14px;font-size:14px;margin-top:16px;text-align:center}
+
+/* forms */
+label.f{display:block;font-family:"Jua",sans-serif;font-size:16px;margin-bottom:6px}
+input.t{width:100%;padding:13px 16px;border:2px solid var(--line);border-radius:16px;background:var(--surface);font-size:17px}
+.btn{display:flex;align-items:center;justify-content:center;width:100%;border:1.5px solid var(--line);border-radius:16px;padding:13px 18px;background:var(--pink);color:var(--on-pink);font-family:"Jua",sans-serif;font-size:19px;box-shadow:0 3px 0 var(--line);transition:transform .08s,box-shadow .08s}
+.btn:active{transform:translateY(3px);box-shadow:0 1px 0 var(--line)}
+.btn.ghost{background:var(--surface);color:var(--ink)}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+.err{color:#E0445A;font-size:14px}
+
+/* brush */
+.brush{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);padding:8px 0 10px;z-index:5}
+.brush button{border:2px solid var(--line);background:var(--surface);border-radius:16px;padding:6px 2px;font-size:13px;line-height:1.2;box-shadow:0 3px 0 var(--line)}
+.brush button .s{display:block;font-family:"Jua",sans-serif;font-size:24px}
+.brush button[data-v="o"] .s{color:var(--mint)} .brush button[data-v="am"] .s,.brush button[data-v="pm"] .s{color:var(--sun)}
+.brush button[aria-pressed="true"]{transform:translateY(3px);box-shadow:0 0 0 var(--line)}
+.brush button[data-v="o"][aria-pressed="true"]{background:var(--mint-bg)}
+.brush button[data-v="am"][aria-pressed="true"],.brush button[data-v="pm"][aria-pressed="true"]{background:var(--sun-bg)}
+.brush button[data-v="x"][aria-pressed="true"]{background:var(--soft)}
+
+/* calendar */
+.cal{padding:12px 10px}
+.calhead{display:flex;align-items:center;justify-content:space-between;padding:0 4px 10px}
+.calhead b{font-family:"Jua",sans-serif;font-weight:400;font-size:22px}
+.calhead button{border:2px solid var(--line);background:var(--surface);border-radius:50%;width:36px;height:36px;font-size:18px;line-height:1;box-shadow:0 2px 0 var(--line)}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.dow{text-align:center;font-family:"Jua",sans-serif;font-size:13px;color:var(--muted);padding-bottom:2px}
+.dow.sun{color:#E0445A} .dow.sat{color:#4C6FE0}
+.cell{min-height:60px;border-radius:14px;border:2px solid transparent;background:transparent;padding:4px 2px;display:flex;flex-direction:column;align-items:center;text-align:center;overflow:hidden;position:relative}
+button.cell{background:var(--bg)}
+.cell .n{font-size:13px;line-height:1.1}
+.cell.past{background:var(--past);color:var(--muted);opacity:.55}
+.cell.today .n{background:var(--pink);color:var(--on-pink);border-radius:999px;padding:1px 6px}
+.cell.o{background:var(--mint-bg);border-color:var(--mint)}
+.cell.am,.cell.pm{background:var(--sun-bg);border-color:var(--sun)}
+.cell .mk{font-family:"Jua",sans-serif;font-size:24px;line-height:1;margin-top:3px}
+.cell.o .mk{color:var(--mint)} .cell.am .mk,.cell.pm .mk{color:var(--sun)}
+.cell .ap{font-size:10px;color:var(--sun);font-weight:700}
+.cell.sel{border-color:var(--pink);box-shadow:0 0 0 2px var(--pink)}
+.cell.all{border-color:var(--mint)}
+.chips{display:flex;flex-direction:column;gap:2px;width:100%;margin-top:3px}
+.chip{font-size:10px;line-height:1.3;border-radius:6px;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip.o{background:var(--mint-bg);color:var(--mint)}
+.chip.am,.chip.pm{background:var(--sun-bg);color:var(--sun)}
+.chip.more{color:var(--muted)}
+.star{position:absolute;top:1px;right:3px;font-size:10px}
+
+/* list & panels */
+.item{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px}
+.item b{display:block;font-family:"Jua",sans-serif;font-weight:400;font-size:19px}
+.code{letter-spacing:.14em;font-weight:700}
+.codebox{background:var(--pink-bg);padding:18px;text-align:center}
+.codebox .code{font-family:"Jua",sans-serif;font-size:40px;display:block;margin:2px 0;letter-spacing:.18em}
+textarea.msg{width:100%;min-height:100px;border:2px solid var(--line);border-radius:16px;background:var(--surface);padding:12px;font-size:14px;resize:vertical}
+.panel{padding:14px 16px}
+.panel h3{font-size:18px;margin-bottom:8px}
+.who{display:flex;flex-wrap:wrap;gap:6px}
+.who .chip{font-size:14px;padding:3px 10px;border-radius:999px}
+.best button{display:flex;justify-content:space-between;align-items:center;background:none;border:0;border-bottom:2px dotted var(--soft);padding:8px 0;text-align:left;width:100%}
+.best button:last-child{border-bottom:0}
+.rank{font-family:"Jua",sans-serif;display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--pink);color:var(--on-pink);font-size:14px;margin-right:8px}
+.empty{text-align:center;padding:24px 8px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);font-family:"Jua",sans-serif;padding:10px 18px;border-radius:999px;font-size:15px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion: reduce){.bob,.bob2{animation:none}.toast{transition:none}}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+/* =========================================================
+   STORE — 저장 관련 코드는 전부 여기에만 있어요.
+   나중에 Firestore로 옮길 때 이 객체만 바꾸면 됩니다.
+   ========================================================= */
+const ALPH = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function newCode(){ const a=new Uint32Array(6); crypto.getRandomValues(a); return Array.from(a,x=>ALPH[x%ALPH.length]).join(""); }
+
+/* ▼▼▼ 여기에 Firebase 설정값을 붙여넣으세요 ▼▼▼ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBkSph9OiUKqZJk6ZxCG5WN-ultAU_aGNI",
+  authDomain: "daypick-6defc.firebaseapp.com",
+  projectId: "daypick-6defc",
+  storageBucket: "daypick-6defc.firebasestorage.app",
+  messagingSenderId: "1093763668075",
+  appId: "1:1093763668075:web:a4357bec93132d01aeb92e"
+};
+/* ▲▲▲ 여기까지 ▲▲▲ */
+
+const LS = {
+  get(k, d){ try{ const v=localStorage.getItem("daypick:"+k); return v==null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem("daypick:"+k, JSON.stringify(v)); }catch{} }
+};
+
+const Store = {
+  fs:null, uid:null, configMissing:false,
+  async init(){
+    if (!firebaseConfig.apiKey || firebaseConfig.apiKey==="PASTE_HERE" || !window.firebase){ this.configMissing=true; return false; }
+    firebase.initializeApp(firebaseConfig);
+    this.fs = firebase.firestore();
+    let uid = LS.get("uid", null);
+    if (!uid){ uid = (crypto.randomUUID ? crypto.randomUUID() : newCode()+newCode()+Date.now()).replace(/-/g,""); LS.set("uid", uid); }
+    this.uid = uid; return true;
+  },
+  async getNick(){ return LS.get("nick", ""); },
+  async setNick(nick){ LS.set("nick", nick); },
+  async getSchedule(code){ const s=await this.fs.doc("schedules/"+code).get(); return s.exists ? {code, ...s.data()} : null; },
+  async createSchedule(name){
+    for (let i=0;i<5;i++){
+      const code=newCode();
+      if (!(await this.getSchedule(code))){
+        await this.fs.doc("schedules/"+code).set({name, createdBy:this.uid, createdAt:Date.now()});
+        return code;
+      }
+    }
+    throw new Error("code");
+  },
+  async getMyMarks(code){ const r=await this.fs.doc(`schedules/${code}/responses/${this.uid}`).get(); return r.exists ? {...(r.data().marks||{})} : {}; },
+  async saveMyMarks(code, name, marks){
+    await this.fs.doc(`schedules/${code}/responses/${this.uid}`).set({name, marks, updatedAt:Date.now()});
+    const mine = LS.get("mine", []).filter(x=>x.code!==code);
+    mine.unshift({code, joinedAt:Date.now()}); LS.set("mine", mine.slice(0,50));
+  },
+  async listMine(){
+    const refs = LS.get("mine", []);
+    const out = await Promise.all(refs.map(r=>this.getSchedule(r.code).catch(()=>null)));
+    return out.filter(Boolean);
+  },
+  watchPeople(code, onChange, onError){
+    return this.fs.collection(`schedules/${code}/responses`).onSnapshot(
+      snap=>onChange(snap.docs.map(d=>({id:d.id, ...d.data()}))), onError);
+  },
+  isDenied(e){ return e && e.code==="permission-denied"; }
+};
+
+/* ========================= UI ========================= */
+const PAGE_URL = location.origin + location.pathname;
+const SYM = {o:"○", am:"△", pm:"△"};
+const SHORT = {o:"○", am:"△am", pm:"△pm"};
+const app = document.getElementById("app");
+const S = { ready:false, checked:false, nick:"", unsub:null };
+
+function h(tag, attrs, ...kids){
+  const el = document.createElement(tag);
+  for (const [k,v] of Object.entries(attrs||{})){
+    if (v==null || v===false) continue;
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k==="class") el.className = v;
+    else el.setAttribute(k, v===true ? "" : v);
+  }
+  for (const c of kids.flat()){ if (c==null||c===false) continue; el.append(c.nodeType ? c : document.createTextNode(String(c))); }
+  return el;
+}
+function svg(markup){ const d=document.createElement("div"); d.innerHTML=markup; return d.firstElementChild; }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("show"),1800); }
+const pad=n=>String(n).padStart(2,"0");
+const key=(y,m,d)=>`${y}-${pad(m+1)}-${pad(d)}`;
+function todayKey(){const t=new Date();return key(t.getFullYear(),t.getMonth(),t.getDate())}
+function fmtKey(k){const [y,m,d]=k.split("-").map(Number);return `${m}월 ${d}일 (${"일월화수목금토"[new Date(y,m-1,d).getDay()]})`}
+function go(fn, ...a){ if(S.unsub){S.unsub();S.unsub=null} app.replaceChildren(); window.scrollTo(0,0); fn(...a); }
+function topBar(){ return h("div",{class:"topbar"}, h("button",{class:"back",onclick:()=>go(home)},"‹ 처음으로")); }
+function parseCode(text){
+  const t=(text||"").toUpperCase();
+  let m=t.match(/(?:초대코드|CODE)\s*[:=]?\s*([A-Z0-9]{6})/); if(m) return m[1];
+  if (/^[A-Z0-9]{6}$/.test(t.trim())) return t.trim();
+  m=t.match(/\b([A-Z0-9]{6})\b/g); return m ? m[m.length-1] : null;
+}
+const inviteText=(name,code)=>`[${name}] 데이픽에서 날짜 골라줘 🗓️\n${PAGE_URL}?code=${code}\n초대코드: ${code}\n링크를 누르면 바로 참여할 수 있어요.`;
+async function copy(text, ta){ try{ await navigator.clipboard.writeText(text); toast("복사했어요!"); }catch{ ta.focus(); ta.select(); toast("길게 눌러 복사해 주세요"); } }
+
+
+
+/* calendar */
+function calendar({renderCell, onTap}){
+  const now=new Date(); let y=now.getFullYear(), m=now.getMonth();
+  const wrap=h("div",{class:"cal stk"}); const tk=todayKey();
+  function draw(){
+    const first=new Date(y,m,1).getDay(), days=new Date(y,m+1,0).getDate();
+    const grid=h("div",{class:"grid"}, ..."일월화수목금토".split("").map((d,i)=>h("div",{class:"dow"+(i===0?" sun":i===6?" sat":"")},d)));
+    for(let i=0;i<first;i++) grid.append(h("div",{}));
+    for(let d=1; d<=days; d++){
+      const k=key(y,m,d), past=k<tk;
+      const el=h(onTap&&!past?"button":"div",{class:"cell"+(past?" past":"")+(k===tk?" today":""),"aria-label":fmtKey(k)}, h("span",{class:"n"},d));
+      if(onTap&&!past) el.addEventListener("click",()=>{onTap(k);draw();});
+      renderCell(el,k);
+      grid.append(el);
+    }
+    wrap.replaceChildren(h("div",{class:"calhead"},
+      h("button",{"aria-label":"이전 달",onclick:()=>{if(--m<0){m=11;y--}draw();}},"‹"),
+      h("b",{},`${y}년 ${m+1}월`),
+      h("button",{"aria-label":"다음 달",onclick:()=>{if(++m>11){m=0;y++}draw();}},"›")), grid);
+  }
+  draw(); wrap.redraw=draw; return wrap;
+}
+
+function markEditor(marks){
+  let brush="o"; const btns={};
+  const pal=h("div",{class:"brush",role:"group","aria-label":"표시 종류"},
+    ...[["o","○","하루 종일"],["am","△","오전"],["pm","△","오후"],["x","✕","지우기"]].map(([v,s,l])=>{
+      const b=h("button",{"data-v":v,"aria-pressed":v===brush?"true":"false",onclick:()=>{brush=v;for(const k in btns)btns[k].setAttribute("aria-pressed",k===v?"true":"false")}}, h("span",{class:"s"},s), l);
+      btns[v]=b; return b;
+    }));
+  const cal=calendar({
+    renderCell(el,k){ const v=marks[k]; if(!v) return; el.classList.add(v); el.append(h("span",{class:"mk"},SYM[v])); if(v!=="o") el.append(h("span",{class:"ap"},v==="am"?"오전":"오후")); },
+    onTap(k){ if(brush==="x"||marks[k]===brush) delete marks[k]; else marks[k]=brush; }
+  });
+  return h("div",{class:"stack"}, h("p",{class:"small muted"},"종류를 고르고 날짜를 콕콕 눌러주세요. 한 번 더 누르면 지워져요."), pal, cal);
+}
+
+function nickField(){
+  const inp=h("input",{class:"t",id:"nick",maxlength:"12",placeholder:"예: 민지",value:S.nick||""});
+  return {el:h("div",{},h("label",{class:"f",for:"nick"},"달력에 보일 내 이름"),inp), get:()=>inp.value.trim()};
+}
+
+/* screens */
+function home(){
+  const dis=!S.ready;
+  const card=(cls,ic,t,d,fn)=>h("button",{class:"card stk "+cls,disabled:dis,onclick:fn}, h("span",{class:"ic"},ic), h("b",{},t));
+  app.append(
+    h("div",{class:"hero"}, h("h1",{},"데이픽"), h("p",{},"하루 종일은 ○, 오전 또는 오후는 △")),
+    h("div",{class:"menu"},
+      card("big","+","일정 만들기","모임 이름 정하고 친구 부르기",()=>go(createName)),
+      card("join","✉","참여하기","받은 코드 넣기",()=>go(joinScreen)),
+      card("view","○","일정 보기","모두의 가능한 날",()=>go(listScreen))),
+    dis ? h("p",{class:"notice"}, S.checked ? (Store.configMissing ? "Firebase 설정값을 넣어야 동작해요. index.html 위쪽의 firebaseConfig를 채워주세요." : "연결하지 못했어요. 새로고침해 주세요.") : "준비하는 중이에요…") : null);
+}
+
+function createName(){
+  const nameIn=h("input",{class:"t",id:"sname",maxlength:"30",placeholder:"예: 12월 송년회"});
+  const nick=nickField(); const err=h("p",{class:"err"});
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},"새 일정 만들기"),
+    h("div",{},h("label",{class:"f",for:"sname"},"일정 이름"),nameIn), nick.el, err,
+    h("button",{class:"btn",onclick:()=>{
+      const n=nameIn.value.trim(), k=nick.get();
+      if(!n){err.textContent="일정 이름을 적어주세요.";return}
+      if(!k){err.textContent="내 이름을 적어주세요.";return}
+      go(createMarks,{name:n,nick:k});
+    }},"다음: 내 일정 표시하기")));
+  nameIn.focus();
+}
+
+function createMarks(draft){
+  const marks={}; const err=h("p",{class:"err"});
+  const save=h("button",{class:"btn",onclick:async()=>{
+    save.disabled=true; save.textContent="만드는 중…";
+    try{
+      const code=await Store.createSchedule(draft.name);
+      S.nick=draft.nick; await Store.setNick(draft.nick);
+      await Store.saveMyMarks(code, draft.nick, marks);
+      go(inviteScreen, code, draft.name, true);
+    }catch(e){
+      save.disabled=false; save.textContent="저장하고 친구 초대하기";
+      err.textContent=Store.isDenied(e)?"저장이 거부됐어요. Firestore 규칙이 게시됐는지 확인해 주세요.":"저장하지 못했어요. 잠시 후 다시 눌러주세요.";
+    }
+  }},"저장하고 친구 초대하기");
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},draft.name), h("p",{class:"muted"},`${draft.nick}님이 되는 날을 표시해 주세요.`), markEditor(marks), err, save));
+}
+
+function inviteScreen(code, name, fresh){
+  const msg=inviteText(name,code);
+  const ta=h("textarea",{class:"msg",readonly:true,"aria-label":"초대 메시지"}); ta.value=msg;
+  app.append(topBar(), h("div",{class:"stack"},
+    h("h2",{}, fresh?"일정을 만들었어요! 🎉":"친구 초대하기"),
+    h("div",{class:"codebox stk"}, h("p",{class:"small"},"초대코드"), h("span",{class:"code"},code), h("p",{class:"small muted"},name)),
+    h("div",{},h("label",{class:"f"},"친구에게 보낼 메시지"),ta),
+    h("div",{class:"row"}, h("button",{class:"btn",onclick:()=>copy(msg,ta)},"메시지 복사"),
+      navigator.share ? h("button",{class:"btn ghost",onclick:()=>navigator.share({text:msg}).catch(()=>{})},"공유하기") : null),
+    h("button",{class:"btn ghost",onclick:()=>go(detail,code)},"모두의 일정 보기")));
+}
+
+function joinScreen(prefill){
+  const inp=h("input",{class:"t",id:"jc",placeholder:"링크, 초대 메시지, 코드 6자리",value:prefill||""});
+  const err=h("p",{class:"err"});
+  const btn=h("button",{class:"btn",onclick:async()=>{
+    const code=parseCode(inp.value);
+    if(!code){err.textContent="초대코드 6자리를 못 찾았어요. 메시지 전체를 붙여넣거나 코드만 적어주세요.";return}
+    btn.disabled=true;
+    try{
+      const s=await Store.getSchedule(code);
+      if(!s){err.textContent=`코드 ${code}인 일정이 없어요. 코드를 다시 확인해 주세요.`;btn.disabled=false;return}
+      go(joinMarks, code, s.name);
+    }catch{ err.textContent="일정을 불러오지 못했어요. 다시 시도해 주세요."; btn.disabled=false; }
+  }},"일정 찾기");
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},"일정 참여하기"),
+    h("div",{},h("label",{class:"f",for:"jc"},"받은 링크나 초대코드를 붙여넣어 주세요"),inp), err, btn));
+  inp.focus();
+  if(prefill) btn.click();
+}
+
+async function joinMarks(code, name){
+  let marks={}; try{ marks=await Store.getMyMarks(code); }catch{}
+  const nick=nickField(); const err=h("p",{class:"err"});
+  const save=h("button",{class:"btn",onclick:async()=>{
+    const k=nick.get(); if(!k){err.textContent="내 이름을 적어주세요.";return}
+    save.disabled=true; save.textContent="저장하는 중…";
+    try{ S.nick=k; await Store.setNick(k); await Store.saveMyMarks(code,k,marks); toast("저장했어요!"); go(detail,code); }
+    catch(e){ save.disabled=false; save.textContent="내 일정 저장하기";
+      err.textContent=Store.isDenied(e)?"저장이 거부됐어요. 이름은 12자, 일정은 400일 이하로 표시해 주세요.":"저장하지 못했어요. 다시 눌러주세요."; }
+  }},"내 일정 저장하기");
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},name), h("p",{class:"small muted"},`초대코드 ${code}`), nick.el, markEditor(marks), err, save));
+}
+
+async function listScreen(){
+  const box=h("div",{class:"stack"}, h("p",{class:"muted"},"불러오는 중…"));
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},"내 일정"), box));
+  try{
+    const items=await Store.listMine();
+    if(!items.length){
+      box.replaceChildren(h("div",{class:"empty stk"}, h("p",{class:"jua",style:"font-size:20px"},"아직 들어간 일정이 없어요"), h("p",{class:"small muted",style:"margin:4px 0 14px"},"새로 만들거나 받은 코드로 참여해 보세요."),
+        h("div",{class:"row"}, h("button",{class:"btn",onclick:()=>go(createName)},"만들기"), h("button",{class:"btn ghost",onclick:()=>go(joinScreen)},"참여하기"))));
+      return;
+    }
+    box.replaceChildren(...items.map(it=>h("button",{class:"item stk",onclick:()=>go(detail,it.code)},
+      h("span",{},h("b",{},it.name),h("span",{class:"small muted"},it.createdBy===Store.uid?"내가 만든 일정":"참여한 일정")),
+      h("span",{class:"code small muted"},it.code))));
+  }catch{ box.replaceChildren(h("p",{class:"err"},"목록을 불러오지 못했어요. 처음 화면에서 다시 들어와 주세요.")); }
+}
+
+async function detail(code){
+  let sched;
+  try{ sched=await Store.getSchedule(code); }catch{}
+  if(!sched){ app.append(topBar(), h("p",{class:"err"},"일정을 불러오지 못했어요.")); return; }
+  let people=[], sel=null, map={};
+  const head=h("p",{class:"muted small"}), selPanel=h("div"), bestPanel=h("div");
+  const build=()=>{ map={}; for(const p of people) for(const [k,v] of Object.entries(p.marks||{})) (map[k] ||= []).push({name:p.name||"이름 없음",v}); for(const k in map) map[k].sort((a,b)=>(a.v==="o"?0:1)-(b.v==="o"?0:1)); };
+  const cal=calendar({
+    renderCell(el,k){
+      const list=map[k]; if(!list) return;
+      if(k===sel) el.classList.add("sel");
+      const chips=h("div",{class:"chips"});
+      list.slice(0,2).forEach(x=>chips.append(h("span",{class:"chip "+x.v},`${x.name} ${SHORT[x.v]}`)));
+      if(list.length>2) chips.append(h("span",{class:"chip more"},`+${list.length-2}`));
+      el.append(chips);
+      if(people.length>1 && list.filter(x=>x.v==="o").length===people.length){ el.classList.add("all"); el.append(h("span",{class:"star","aria-label":"모두 가능"},"⭐")); }
+    },
+    onTap(k){ sel=k; renderSel(); }
+  });
+  function renderSel(){
+    if(!sel){ selPanel.replaceChildren(h("p",{class:"small muted",style:"text-align:center"},"날짜를 누르면 그날 되는 친구가 모두 보여요.")); return; }
+    const list=map[sel]||[], no=people.filter(p=>!(p.marks||{})[sel]).map(p=>p.name||"이름 없음");
+    selPanel.replaceChildren(h("div",{class:"panel stk"}, h("h3",{},fmtKey(sel)),
+      list.length ? h("div",{class:"who"}, ...list.map(x=>h("span",{class:"chip "+x.v},`${x.name} (${SHORT[x.v]})`))) : h("p",{class:"small muted"},"아직 이날 되는 친구가 없어요."),
+      no.length ? h("p",{class:"small muted",style:"margin-top:8px"},"표시 안 함: "+no.join(", ")) : null));
+  }
+  function renderBest(){
+    const tk=todayKey();
+    const top3=Object.entries(map).filter(([k])=>k>=tk).map(([k,l])=>({k,s:l.reduce((a,x)=>a+(x.v==="o"?1:.5),0),o:l.filter(x=>x.v==="o").length,t:l.filter(x=>x.v!=="o").length}))
+      .sort((a,b)=>b.s-a.s||a.k.localeCompare(b.k)).slice(0,3);
+    bestPanel.replaceChildren(top3.length ? h("div",{class:"panel stk"}, h("h3",{},"가장 많이 되는 날"),
+      h("div",{class:"best"}, ...top3.map((x,i)=>h("button",{onclick:()=>{sel=x.k;cal.redraw();renderSel();selPanel.scrollIntoView({behavior:"smooth",block:"nearest"})}},
+        h("span",{},h("span",{class:"rank"},i+1),fmtKey(x.k)), h("span",{class:"small muted"},`○ ${x.o}명${x.t?` · △ ${x.t}명`:""}`))))) : null);
+  }
+  function render(){ build(); head.textContent=`${people.length}명 참여 · 초대코드 ${code}`; cal.redraw(); renderSel(); renderBest(); }
+  app.append(topBar(), h("div",{class:"stack"}, h("h2",{},sched.name), head, bestPanel, cal, selPanel,
+    h("div",{class:"row"}, h("button",{class:"btn",onclick:()=>go(joinMarks,code,sched.name)},"내 일정 수정"),
+      h("button",{class:"btn ghost",onclick:()=>go(inviteScreen,code,sched.name,false)},"초대하기"))));
+  render();
+  S.unsub=Store.watchPeople(code, list=>{people=list;render();}, ()=>{head.textContent="실시간 업데이트가 멈췄어요. 다시 들어와 주세요.";});
+}
+
+/* boot */
+go(home);
+(async()=>{
+  try{ S.ready = await Store.init(); if(S.ready) S.nick = await Store.getNick(); }catch{ S.ready=false; }
+  S.checked=true;
+  const hc=new URLSearchParams(location.search).get("code") || (location.hash.match(/code=([A-Za-z0-9]{6})/)||[])[1];
+  if(S.ready&&hc&&/^[A-Za-z0-9]{6}$/.test(hc)) go(joinScreen,hc.toUpperCase()); else go(home);
+})();
+})();
+</script>
+</body>
+</html>
